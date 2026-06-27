@@ -291,9 +291,9 @@
           <h2 class="dialogTitle">关于 Lyn Novel</h2>
           <div class="aboutContent">
             <div class="aboutName">Lyn Novel</div>
-            <div class="aboutVersion">版本 1.0.0</div>
+            <div class="aboutVersion">版本 v1.1.0</div>
             <div class="aboutDescription">
-              Lyn Novel 是一款智能小说创作工具，主要用于本地运行的AI大模型辅助写作、章节管理、人物设定等功能，帮助您更高效地创作小说，不用担心数据安全问题。
+              Lyn Novel 是一款智能小说创作工具，支持多种 AI 大模型（Ollama、Llama、OpenAI 兼容、Anthropic 兼容）辅助写作、章节管理、人物设定、情节规划等功能。所有数据本地存储，API 密钥仅保存在后端，保障您的创作安全和隐私。
             </div>
           </div>
           <div class="dialogActions">
