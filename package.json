@@ -1,11 +1,15 @@
 {
   "name": "lyn-novel",
   "private": true,
-  "version": "0.0.1",
+  "version": "1.0.0",
+  "description": "AI-assisted novel writing tool",
+  "author": "lyngie-studio",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "server": "node server/index.js",
+    "dev": "concurrently --kill-others -n frontend,backend -c cyan,magenta \"vite\" \"node server/index.cjs\"",
+    "dev:frontend": "vite",
+    "dev:backend": "node server/index.cjs",
+    "server": "node server/index.cjs",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -17,6 +21,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.3",
+    "concurrently": "^10.0.3",
     "vite": "^6.3.5"
   }
 }

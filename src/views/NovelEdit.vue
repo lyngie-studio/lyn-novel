@@ -245,7 +245,7 @@
               type="text"
               @click.stop
             />
-            <span v-else>请选择章节</span>
+            <span v-else>暂无章节</span>
           </h2>
           <div class="editorStats">
             <span>章节字数: {{ currentChapter?.wordCount || 0 }}</span>
@@ -258,7 +258,7 @@
             ref="editorRef"
             v-model="chapterContentValue"
             class="editorTextarea"
-            placeholder="开始写作..."
+            :placeholder="currentChapterContent ? '开始写作...' : '暂无内容'"
             @input="updateWordCount"
             @click="updateCursorParagraphCount"
             @keyup="updateCursorParagraphCount"
@@ -308,6 +308,27 @@
         </div>
       </div>
     </div>
+
+    <div v-if="dialogMessage.show" class="dialogOverlay" @click.self="dialogMessage.show = false">
+      <div class="dialog">
+        <h2 class="dialogTitle">{{ dialogMessage.title }}</h2>
+        <p class="dialogMessage">{{ dialogMessage.message }}</p>
+        <div class="dialogActions">
+          <button class="btn btnPrimary" @click="dialogMessage.show = false">确定</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="dialogConfirm.show" class="dialogOverlay" @click.self="onConfirmNo">
+      <div class="dialog">
+        <h2 class="dialogTitle">{{ dialogConfirm.title }}</h2>
+        <p class="dialogMessage">{{ dialogConfirm.message }}</p>
+        <div class="dialogActions">
+          <button class="btn btnSecondary" @click="onConfirmNo">取消</button>
+          <button class="btn btnPrimary" @click="onConfirmYes">确定</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -342,6 +363,32 @@ const plotsContainerRef = ref(null)
 const chaptersContainerRef = ref(null)
 const plotContentSpanRefs = ref([])
 const plotContentHeights = ref({})
+
+const dialogMessage = ref({ show: false, title: '提示', message: '' })
+
+function showDialogMessage(message, title = '提示') {
+  dialogMessage.value = { show: true, title, message }
+}
+
+const dialogConfirm = ref({ show: false, title: '确认', message: '' })
+let confirmResolve = null
+
+function showDialogConfirm(message, title = '确认') {
+  return new Promise((resolve) => {
+    confirmResolve = resolve
+    dialogConfirm.value = { show: true, title, message }
+  })
+}
+
+function onConfirmYes() {
+  dialogConfirm.value.show = false
+  if (confirmResolve) confirmResolve(true)
+}
+
+function onConfirmNo() {
+  dialogConfirm.value.show = false
+  if (confirmResolve) confirmResolve(false)
+}
 
 const showCharDialog = ref(false)
 const charName = ref('')
@@ -607,6 +654,12 @@ function getAIButtonText() {
     }
     return '✨ AI优化'
   }
+  if (activeTab.value === 'chapters') {
+    const currentContent = currentChapterContent.value || ''
+    if (currentContent.trim().length > 0) {
+      return '✨ 重新生成'
+    }
+  }
   return '✨ AI生成'
 }
 
@@ -683,16 +736,16 @@ function saveToServer() {
       isSaving.value = false
       setTimeout(() => {
         if (res.ok) {
-          alert('保存成功')
+          showDialogMessage('保存成功')
         } else {
-          alert('保存失败，请重试')
+          showDialogMessage('保存失败，请重试')
         }
       }, 1000)
     })
     .catch(err => {
       isSaving.value = false
       setTimeout(() => {
-        alert('保存失败，请检查服务器是否运行')
+        showDialogMessage('保存失败，请检查服务器是否运行')
       }, 1000)
     })
 }
@@ -749,12 +802,12 @@ function regenerateCharacter(index) {
   // 重新生成人物逻辑
   const char = novelData.value.characters[index]
   // 这里可以调用AI生成方法，暂时只做简单处理
-  alert('重新生成功能需要调用AI，暂未实现')
+  showDialogMessage('重新生成功能需要调用AI，暂未实现')
   showCharacterMenu.value = false
 }
 
-function deleteCharacter(index) {
-  if (confirm('确定要删除这个人物吗？')) {
+async function deleteCharacter(index) {
+  if (await showDialogConfirm('确定要删除这个人物吗？')) {
     novelData.value.characters.splice(index, 1)
     expandedCharacters.value = expandedCharacters.value.filter(i => i !== index).map(i => i > index ? i - 1 : i)
   }
@@ -860,12 +913,12 @@ function movePlotToTop(index) {
 }
 
 function regeneratePlot(index) {
-  alert('重新生成功能需要调用AI，暂未实现')
+  showDialogMessage('重新生成功能需要调用AI，暂未实现')
   showPlotMenu.value = false
 }
 
-function deletePlot(index) {
-  if (confirm('确定要删除这个情节吗？')) {
+async function deletePlot(index) {
+  if (await showDialogConfirm('确定要删除这个情节吗？')) {
     novelData.value.plots.splice(index, 1)
     expandedPlots.value = expandedPlots.value.filter(i => i !== index).map(i => i > index ? i - 1 : i)
   }
@@ -952,17 +1005,17 @@ function handleChapterMenuMouseLeave(event) {
 }
 
 function regenerateChapter(index) {
-  alert('重新生成功能需要调用AI，暂未实现')
+  showDialogMessage('重新生成功能需要调用AI，暂未实现')
   showChapterMenu.value = false
 }
 
 function optimizeChapter(index) {
-  alert('AI优化功能需要调用AI，暂未实现')
+  showDialogMessage('AI优化功能需要调用AI，暂未实现')
   showChapterMenu.value = false
 }
 
-function deleteChapter(index) {
-  if (confirm('确定要删除这个章节吗？')) {
+async function deleteChapter(index) {
+  if (await showDialogConfirm('确定要删除这个章节吗？')) {
     const chapterId = novelData.value.chapters[index].id
     novelData.value.chapters.splice(index, 1)
     if (currentChapterId.value === chapterId) {
@@ -979,6 +1032,17 @@ function deleteChapter(index) {
 
 async function generateWithAI() {
   if (isGenerating.value) return
+
+  // 章节模式下：如果当前章节已有内容，弹出确认框
+  if (activeTab.value === 'chapters') {
+    const currentContent = currentChapterContent.value || ''
+    if (currentContent.trim().length > 0) {
+      if (!await showDialogConfirm(`确定要重新生成"${currentChapter.value?.title || ''}"吗？\n\n新生成的内容将覆盖当前章节的已有内容。`)) {
+        return
+      }
+    }
+  }
+
   isGenerating.value = true
   aiThinking.value = ''
   generatingChapterId.value = currentChapterId.value
@@ -1007,60 +1071,109 @@ async function generateWithAI() {
   }
 
   try {
-    // 加载设置
+    // 加载设置（仅用于获取 provider 与 promptKeywords；apiKey/真实 URL 由后端代理处理）
     let modelSettings = {
       provider: 'ollama',
-      ollama: {
-        apiUrl: 'http://localhost:11434/api/generate',
-        model: 'gemma3:1b'
-      },
-      llama: {
-        apiUrl: 'http://localhost:8080/v1/chat/completions',
-        modelPath: ''
-      },
+      ollama: { apiUrl: 'http://localhost:11434/api/generate', model: 'gemma3:1b' },
+      llama: { apiUrl: 'http://localhost:8080/v1/chat/completions', apiKey: '', modelPath: '' },
+      openai: { apiUrl: 'https://api.openai.com/v1/chat/completions', apiKey: '', model: 'gpt-3.5-turbo' },
+      anthropic: { apiUrl: 'https://api.anthropic.com/v1/messages', apiKey: '', model: 'claude-3-5-sonnet-20241022', anthropicVersion: '2023-06-01' },
       promptKeywords: ''
     }
-    
+
     try {
-      const saved = localStorage.getItem('lyn_novel_settings')
-      if (saved) {
-        modelSettings = JSON.parse(saved)
+      const resp = await fetch('http://localhost:3001/api/settings')
+      if (resp.ok) {
+        const data = await resp.json()
+        if (data && typeof data === 'object') {
+          modelSettings = { ...modelSettings, ...data }
+        }
       }
     } catch (e) {
+      // 后端未启动时使用本地默认值
     }
 
     let prompt = ''
 
+    function replaceVars(template, vars) {
+      return template.replace(/\{(\w+)\}/g, (match, key) => {
+        return vars[key] !== undefined ? vars[key] : match
+      })
+    }
+
+    // 加载 prompts 模板
+    let prompts = {}
+    try {
+      const promptsResp = await fetch('http://localhost:3001/api/prompts')
+      if (promptsResp.ok) {
+        prompts = await promptsResp.json()
+      }
+    } catch (e) {
+      // 后端未启动时使用空对象，后续会 fallback 到默认模板
+    }
+
+    const fallbackPrompts = {
+      settings: '基于以下信息，为小说《{novelName}》生成一段吸引人的故事背景和世界观设定。\n小说类型：{style}\n请用中文回答，200字以内。',
+      characters: '返回一个JSON对象，不要有多余文字和内容。为小说《{novelName}》（类型：{style}）生成一个新角色。\n\n已有角色：{charactersInfo}\n\n比如：\n{\n  "name":"艾瑟琳","description":"艾瑟琳是一个科学家，在国家研究所上班。她的口头禅是：我是一个伟大的女性。短头发，深棕色的眼睛，高挺的鼻梁。"\n}',
+      plots: '为小说《{novelName}》（类型：{style}）设计一个新情节。\n\n已有情节：{plotsInfo}\n\n只返回以下格式的JSON，不要有任何其他内容：\n{\n  "title":"情节标题","content":"情节内容"\n}',
+      chapters: {
+        regenerate: '你是小说《{novelName}》的作者。\n小说类型：{style}\n小说设定：{settings}\n已有情节：{plotsList}\n已有角色：{charactersList}\n\n请重新生成章节"{chapterTitle}"的内容。\n\n当前章节内容：\n{currentContent}\n\n请重新创作该章节，保持文风和剧情连贯性。用中文回复，只回复章节内容，总章节字数2000字以上。',
+        firstTime: '你是小说《{novelName}》的作者。\n小说类型：{style}\n小说设定：{settings}\n已有情节：{plotsList}\n已有角色：{charactersList}\n\n{previousChapterSection}请生成章节"{chapterTitle}"的内容。\n\n请创作该章节，保持文风和剧情连贯性。用中文回复，只回复章节内容，总章节字数2000字以上。'
+      }
+    }
+
     if (activeTab.value === 'settings') {
-      prompt = `基于以下信息，为小说《${novelData.value.name}》生成一段吸引人的故事背景和世界观设定。\n小说类型：${novelData.value.style}\n请用中文回答，200字以内。`
+      const template = prompts.settings || fallbackPrompts.settings
+      prompt = replaceVars(template, {
+        novelName: novelData.value.name,
+        style: novelData.value.style
+      })
     } else if (activeTab.value === 'characters') {
       const charactersInfo = novelData.value.characters.map(c => `人物：${c.name}，描述：${c.description}`).join('\n')
-      prompt = `返回一个JSON对象，不要有多余文字和内容。为小说《${novelData.value.name}》（类型：${novelData.value.style}）生成一个新角色。
-
-已有角色：${charactersInfo || '暂无'}
-
-比如：
-{
-  "name":"艾瑟琳","description":"艾瑟琳是一个科学家，在国家研究所上班。她的口头禅是：我是一个伟大的女性。短头发，深棕色的眼睛，高挺的鼻梁。"
-}
-`
+      const template = prompts.characters || fallbackPrompts.characters
+      prompt = replaceVars(template, {
+        novelName: novelData.value.name,
+        style: novelData.value.style,
+        charactersInfo: charactersInfo || '暂无'
+      })
     } else if (activeTab.value === 'plots') {
       const plotsInfo = novelData.value.plots.map(p => `情节：${p.title}，${p.content}`).join('\n')
-      prompt = `为小说《${novelData.value.name}》（类型：${novelData.value.style}）设计一个新情节。
-
-已有情节：${plotsInfo || '暂无'}
-
-只返回以下格式的JSON，不要有任何其他内容：
-{
-  "title":"情节标题","content":"情节内容"
-}`
+      const template = prompts.plots || fallbackPrompts.plots
+      prompt = replaceVars(template, {
+        novelName: novelData.value.name,
+        style: novelData.value.style,
+        plotsInfo: plotsInfo || '暂无'
+      })
     } else if (activeTab.value === 'chapters') {
       const currentContent = currentChapterContent.value || ''
-      const previousChapters = novelData.value.chapters
-        .filter(c => c.id !== currentChapterId.value)
-        .map(c => `第${c.title}：${c.content.substring(0, 200)}`)
-        .join('\n')
-      prompt = `你是小说《${novelData.value.name}》的续写作者。\n小说类型：${novelData.value.style}\n小说设定：${novelData.value.settings}\n已有情节：${novelData.value.plots.map(p => p.title).join('、')}\n已有角色：${novelData.value.characters.map(c => c.name).join('、')}\n\n当前章节：${currentChapter.value?.title || ''}\n当前内容：${currentContent || '（空）'}\n\n请续写当前章节，保持文风和剧情连贯性。用中文回复，只回复续写内容，总章节字数2000字以上。`
+      const currentIndex = novelData.value.chapters.findIndex(c => c.id === currentChapterId.value)
+
+      let previousChapterSection = ''
+      if (currentIndex > 0) {
+        const prevChapter = novelData.value.chapters[currentIndex - 1]
+        const prevContent = prevChapter.content || ''
+        if (prevContent) {
+          previousChapterSection = `前一章节"${prevChapter.title}"的完整内容：\n${prevContent}\n\n`
+        }
+      }
+
+      const baseVars = {
+        novelName: novelData.value.name,
+        style: novelData.value.style,
+        settings: novelData.value.settings,
+        plotsList: novelData.value.plots.map(p => p.title).join('、'),
+        charactersList: novelData.value.characters.map(c => c.name).join('、'),
+        chapterTitle: currentChapter.value?.title || ''
+      }
+
+      const chapterPrompts = prompts.chapters || fallbackPrompts.chapters
+      if (currentContent.trim().length > 0) {
+        const template = chapterPrompts.regenerate || fallbackPrompts.chapters.regenerate
+        prompt = replaceVars(template, { ...baseVars, currentContent })
+      } else {
+        const template = chapterPrompts.firstTime || fallbackPrompts.chapters.firstTime
+        prompt = replaceVars(template, { ...baseVars, previousChapterSection })
+      }
     }
 
     // 添加自定义prompt关键字
@@ -1068,46 +1181,44 @@ async function generateWithAI() {
       prompt += '\n\n' + modelSettings.promptKeywords
     }
 
-    // 根据设置选择API地址和参数
-    let apiUrl = modelSettings.ollama.apiUrl
-
-    let requestBody = {
-      model: modelSettings.ollama.model,
-      prompt: prompt,
+    // 构造代理请求体：前端不再持有 apiKey，URL/Authorization 由后端注入
+    const proxyBody = {
+      provider: modelSettings.provider,
+      messages: [{ role: 'user', content: prompt }],
       stream: true,
+      temperature: 0.7,
       max_tokens: 4096
     }
 
-    if (modelSettings.provider === 'llama') {
-      apiUrl = modelSettings.llama.apiUrl
-      // llama.cpp 的 API 格式（兼容 OpenAI 格式）
-      requestBody = {
-        model: 'gpt-3.5-turbo', // 占位模型名称
-        messages: [
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 4096,
-        //stop: ["\n\n"],
-        repeat_penalty: 1.10,
-        stream: true
-      }
+    // 输出调试信息（不再打印 apiKey / Authorization）
+    console.log('========== AI 请求调试信息 ==========')
+    console.log('当前标签页:', activeTab.value)
+    console.log('提供商:', modelSettings.provider)
+    console.log('代理后端:', 'http://localhost:3001/api/ai/chat')
+    let displayModel = 'gpt-3.5-turbo'
+    if (modelSettings.provider === 'ollama') {
+      displayModel = modelSettings.ollama.model
+    } else if (modelSettings.provider === 'openai') {
+      displayModel = modelSettings.openai.model || 'gpt-3.5-turbo'
     }
+    console.log('模型:', displayModel)
+    console.log('完整提示词:')
+    console.log('----------------------------------------')
+    console.log(prompt)
+    console.log('----------------------------------------')
+    console.log('代理请求体:', JSON.stringify(proxyBody, null, 2))
+    console.log('========================================')
 
-    const response = await fetch(apiUrl, {
+    const response = await fetch('http://localhost:3001/api/ai/chat', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestBody),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(proxyBody),
       signal: abortController.value.signal
     })
 
     if (!response.ok) {
-      throw new Error(`AI生成失败: ${response.status} ${response.statusText}\nAPI地址: ${apiUrl}`)
+      const errBody = await response.json().catch(() => ({}))
+      throw new Error(`AI生成失败: ${response.status} ${response.statusText}\n${errBody.error || ''}\n${errBody.detail || ''}`)
     }
 
     // 处理流式输出
@@ -1133,17 +1244,18 @@ async function generateWithAI() {
     while (!done) {
       const { value, done: isDone } = await reader.read()
       done = isDone
-      
+
       // 解码新字节，并拼接到缓冲区
       const chunk = buffer + decoder.decode(value, { stream: true })
       buffer = '' // 清空，准备接收下一轮
+      console.log('[frontend/stream] raw chunk:', chunk.slice(0, 200))
 
       // 按行分割（SSE 以 \n 分隔）
       const lines = chunk.split('\n')
-      
+
       for (const line of lines) {
         if (line.trim() === '') continue
-        
+
         if (line === 'data: [DONE]') {
           done = true
           break
@@ -1151,27 +1263,46 @@ async function generateWithAI() {
 
         if (line.startsWith('data: ')) {
           const payload = line.slice(6) // 去掉 "data: "
-          
+
           try {
             const data = JSON.parse(payload)
+            console.log('[frontend/stream] parsed provider=', modelSettings.provider, 'keys=', Object.keys(data))
             if (modelSettings.provider === 'ollama') {
-              if (data.response) {
-                generatedText += data.response
-                updateStreamOutput(generatedText)
-              }
-            } else if (modelSettings.provider === 'llama') {
+              // 后端已将 ollama JSON Lines 转为 OpenAI SSE 格式
               if (data.choices && data.choices.length > 0) {
                 const delta = data.choices[0].delta
-                if (delta.content) {
+                if (delta && delta.content) {
+                  generatedText += delta.content
+                  updateStreamOutput(generatedText)
+                  console.log('[frontend/stream] ollama appended:', delta.content.slice(0, 30))
+                }
+              }
+            } else if (modelSettings.provider === 'llama' || modelSettings.provider === 'openai') {
+              if (data.choices && data.choices.length > 0) {
+                const delta = data.choices[0].delta
+                if (delta && delta.content) {
                   generatedText += delta.content
                   updateStreamOutput(generatedText)
                 }
+              }
+            } else if (modelSettings.provider === 'anthropic') {
+              // Anthropic SSE: 文本来自 content_block_delta.delta.text
+              // 结束信号为 message_stop
+              if (data.type === 'content_block_delta' && data.delta && typeof data.delta.text === 'string') {
+                generatedText += data.delta.text
+                updateStreamOutput(generatedText)
+              } else if (data.type === 'message_stop') {
+                done = true
+                break
               }
             }
           } catch (err) {
             // 解析失败？说明 JSON 不完整，放回 buffer
             buffer += `data: ${payload}`
           }
+        } else if (line.startsWith('event: ')) {
+          // Anthropic: 事件行不解析，仅做占位
+          continue
         } else {
           // 尝试直接解析 JSON（非标准流式格式）
           try {
@@ -1417,6 +1548,8 @@ async function generateWithAI() {
     } else if (activeTab.value === 'characters') {
       try {
         let cleanText = generatedText.replace(/[\x00-\x1F\x7F]/g, '')
+        // 去除可能的 markdown 代码块标记
+        cleanText = cleanText.replace(/```json\s*/g, '').replace(/```\s*/g, '')
         // 清理可能的额外引号和转义字符
         cleanText = cleanText.trim()
         
@@ -1524,9 +1657,9 @@ async function generateWithAI() {
             }
           }
         }
-        alert('AI返回格式有误，请重试')
+        showDialogMessage('AI返回格式有误，请重试')
       } catch (e) {
-        alert('AI返回格式有误，请重试')
+        showDialogMessage('AI返回格式有误，请重试')
       }
     } else if (activeTab.value === 'plots') {
       try {
@@ -1536,6 +1669,8 @@ async function generateWithAI() {
         }
         
         let cleanText = generatedText.replace(/[\x00-\x1F\x7F]/g, '')
+        // 去除可能的 markdown 代码块标记
+        cleanText = cleanText.replace(/```json\s*/g, '').replace(/```\s*/g, '')
         // 清理可能的额外引号和转义字符
         cleanText = cleanText.trim()
         
@@ -1630,18 +1765,37 @@ async function generateWithAI() {
             }
           }
         }
-        alert('AI返回格式有误，请重试')
+        showDialogMessage('AI返回格式有误，请重试')
       } catch (e) {
-        alert('AI返回格式有误，请重试')
+        showDialogMessage('AI返回格式有误，请重试')
       }
     } else if (activeTab.value === 'chapters') {
-      // 章节内容已经在流式处理中实时更新，这里不需要重复更新
+      // 章节内容已经在流式处理中实时更新
+      // 如果 AI 返回了 # 开头的标题行，提取并更新章节标题
+      if (generatedText && currentChapter.value) {
+        const lines = generatedText.split('\n')
+        if (lines[0] && lines[0].startsWith('# ')) {
+          const newTitle = lines[0].slice(2).trim()
+          if (newTitle) {
+            currentChapter.value.title = newTitle
+            // 从内容中去掉标题行
+            const contentWithoutTitle = lines.slice(1).join('\n').trim()
+            currentChapter.value.content = contentWithoutTitle
+            chapterContentValue.value = contentWithoutTitle
+          }
+        }
+      }
     }
 
   } catch (err) {
     // 忽略中止错误
     if (!err.name || err.name !== 'AbortError') {
-      alert('AI生成失败，请确保Ollama服务正在运行')
+      console.error('========== AI 请求错误详情 ==========')
+      console.error('错误名称:', err.name)
+      console.error('错误消息:', err.message)
+      console.error('错误堆栈:', err.stack)
+      console.error('========================================')
+      showDialogMessage(`AI生成失败: ${err.message}`)
     }
   } finally {
     isGenerating.value = false
@@ -1701,19 +1855,21 @@ function switchTab(tab) {
 }
 
 .backButton {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #3e3e42;
-  border: none;
+  background: #4a4a4e;
+  border: 1px solid #5a5a5e;
+  border-radius: 8px;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.2s, border-color 0.2s;
 }
 
 .backButton:hover {
-  background: #4a4a4e;
+  background: #5a5a5e;
+  border-color: #6a6a6e;
 }
 
 .saveButton {
@@ -1725,6 +1881,12 @@ function switchTab(tab) {
   font-size: 14px;
   color: #ffffff;
   transition: background 0.2s;
+}
+
+.settingsIcon {
+  font-size: 22px;
+  color: #ffffff;
+  font-weight: bold;
 }
 
 .saveButton:hover {
@@ -2009,6 +2171,7 @@ function switchTab(tab) {
 }
 
 .characterHeader, .plotHeader {
+  min-height: 46px;
   padding: 10px;
   cursor: pointer;
   display: flex;
@@ -2266,6 +2429,13 @@ function switchTab(tab) {
   font-weight: 500;
   color: #ffffff;
   margin-bottom: 20px;
+}
+
+.dialogMessage {
+  font-size: 14px;
+  color: #cccccc;
+  line-height: 1.5;
+  white-space: pre-wrap;
 }
 
 .formGroup {

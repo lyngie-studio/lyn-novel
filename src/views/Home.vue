@@ -92,6 +92,17 @@
         </div>
       </div>
     </div>
+
+    <div v-if="dialogConfirm.show" class="dialogOverlay" @click.self="onConfirmNo">
+      <div class="dialog">
+        <h2 class="dialogTitle">{{ dialogConfirm.title }}</h2>
+        <p class="dialogMessage">{{ dialogConfirm.message }}</p>
+        <div class="dialogActions">
+          <button class="btn btnSecondary" @click="onConfirmNo">取消</button>
+          <button class="btn btnPrimary" @click="onConfirmYes">确定</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -119,6 +130,26 @@ async function fetchNovels() {
 onMounted(() => {
   fetchNovels()
 })
+
+const dialogConfirm = ref({ show: false, title: '确认', message: '' })
+let confirmResolve = null
+
+function showDialogConfirm(message, title = '确认') {
+  return new Promise((resolve) => {
+    confirmResolve = resolve
+    dialogConfirm.value = { show: true, title, message }
+  })
+}
+
+function onConfirmYes() {
+  dialogConfirm.value.show = false
+  if (confirmResolve) confirmResolve(true)
+}
+
+function onConfirmNo() {
+  dialogConfirm.value.show = false
+  if (confirmResolve) confirmResolve(false)
+}
 
 const showDialog = ref(false)
 const newNovelName = ref('')
@@ -163,7 +194,7 @@ function exportNovel(novel) {
     mdContent += `## 章节\n\n`
     novel.chapters.forEach(chapter => {
       mdContent += `### ${chapter.title}\n\n`
-      mdContent += `${chapter.content || '暂无内容'}\n\n`
+      mdContent += `${chapter.content || ''}\n\n`
     })
   }
   
@@ -183,7 +214,7 @@ function exportNovel(novel) {
 }
 
 async function deleteNovel(novelId) {
-  if (confirm('确定要删除这本小说吗？')) {
+  if (await showDialogConfirm('确定要删除这本小说吗？')) {
     try {
       await fetch(`http://localhost:3001/api/novels/${novelId}`, {
         method: 'DELETE'
@@ -498,6 +529,13 @@ function getNovelCardClass(style) {
   font-weight: 500;
   color: #ffffff;
   margin-bottom: 20px;
+}
+
+.dialogMessage {
+  font-size: 14px;
+  color: #cccccc;
+  line-height: 1.5;
+  white-space: pre-wrap;
 }
 
 .formGroup {
