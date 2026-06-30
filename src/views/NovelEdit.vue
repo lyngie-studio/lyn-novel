@@ -478,10 +478,7 @@ const totalWordCount = computed(() => {
 const chapterContentValue = computed({
   get: () => {
     if (isGenerating.value && activeTab.value === 'chapters') {
-      if (currentChapterId.value === generatingChapterId.value) {
-        return aiThinking.value
-      }
-      return currentChapterContent.value
+      return aiThinking.value
     }
     return currentChapterContent.value
   },
@@ -1121,8 +1118,11 @@ async function deleteChapter(index) {
 async function generateWithAI() {
   if (isGenerating.value) return
 
-  // 章节模式下：如果当前章节已有内容，弹出确认框
+  // 章节模式下：如果没有章节，自动创建一个；如果当前章节已有内容，弹出确认框
   if (activeTab.value === 'chapters') {
+    if (novelData.value.chapters.length === 0) {
+      addChapter()
+    }
     const currentContent = currentChapterContent.value || ''
     if (currentContent.trim().length > 0) {
       if (!await showDialogConfirm(`确定要重新生成"${currentChapter.value?.title || ''}"吗？\n\n新生成的内容将覆盖当前章节的已有内容。`)) {
@@ -1326,8 +1326,6 @@ async function generateWithAI() {
     const decoder = new TextDecoder()
     let buffer = ''
     let generatedText = ''
-    let isCharactersJson = false
-    let characterData = {}
     let done = false
 
     // 初始化流式输出
@@ -1435,12 +1433,12 @@ async function generateWithAI() {
         // 人物生成：先解析出人物姓名，再流式输出人物简介
         try {
           // 尝试提取name字段（只在未提取时执行）
-          if (!characterData.nameExtracted) {
+          if (!characterData.value.nameExtracted) {
             const nameMatch = text.match(/"name"\s*:\s*"([^"]*)"/)
             if (nameMatch) {
               const name = nameMatch[1]
-              characterData.nameExtracted = true
-              characterData.name = name
+              characterData.value.nameExtracted = true
+              characterData.value.name = name
               // 实时更新到人物列表，确保characterHeader同步更新
               // 检查是否已有同名人物
               let targetCharIndex = novelData.value.characters.findIndex(c => c.name === name)
@@ -1456,12 +1454,12 @@ async function generateWithAI() {
                 // 更新已有人物的名字
                 novelData.value.characters[targetCharIndex].name = name
               }
-              characterData.targetCharIndex = targetCharIndex
+              characterData.value.targetCharIndex = targetCharIndex
             }
           }
           
           // 尝试提取description内容（流式更新）
-          if (characterData.name) {
+          if (characterData.value.name) {
             // 匹配 description 字段的值部分
             const descStartMatch = text.match(/"description"\s*:\s*"/)
             if (descStartMatch) {
@@ -1494,19 +1492,19 @@ async function generateWithAI() {
               // 清理转义字符
               descText = descText.replace(/\\n/g, '\n').replace(/\\"/g, '"')
               
-              if (descText && descText !== characterData.lastDescription) {
-                characterData.lastDescription = descText
-                characterData.description = descText
+              if (descText && descText !== characterData.value.lastDescription) {
+                characterData.value.lastDescription = descText
+                characterData.value.description = descText
                 // 当遇到description字段时，流式记录description的内容
                 console.log('生成的人物描述：', descText)
                 // 流式更新人物描述到描述框中
-                if (characterData.targetCharIndex !== undefined) {
-                  novelData.value.characters[characterData.targetCharIndex].description = descText
+                if (characterData.value.targetCharIndex !== undefined) {
+                  novelData.value.characters[characterData.value.targetCharIndex].description = descText
                 }
-                aiThinking.value = `人物：${characterData.name}\n简介：${descText}`
+                aiThinking.value = `人物：${characterData.value.name}\n简介：${descText}`
               }
             } else {
-              aiThinking.value = `人物：${characterData.name}\n简介：正在生成...`
+              aiThinking.value = `人物：${characterData.value.name}\n简介：正在生成...`
             }
           } else {
             // 即使没有name字段，也要确保显示正在生成的状态
@@ -1514,10 +1512,10 @@ async function generateWithAI() {
           }
         } catch (e) {
           // JSON 还未完全生成，显示正在生成
-          if (!characterData.name) {
+          if (!characterData.value.name) {
             aiThinking.value = '正在生成人物姓名...'
           } else {
-            aiThinking.value = `人物：${characterData.name}\n简介：正在生成...`
+            aiThinking.value = `人物：${characterData.value.name}\n简介：正在生成...`
           }
         }
       } else if (activeTab.value === 'plots') {
@@ -1879,13 +1877,17 @@ async function generateWithAI() {
       // 章节内容已经在流式处理中实时更新
       // 如果 AI 返回了 # 开头的标题行，提取并更新章节标题
       if (generatedText && currentChapter.value) {
+        console.log('[chapter/final] generatedText:', JSON.stringify(generatedText.slice(0, 500)))
         const lines = generatedText.split('\n')
         if (lines[0] && lines[0].startsWith('# ')) {
           const newTitle = lines[0].slice(2).trim()
-          if (newTitle) {
+          const contentWithoutTitle = lines.slice(1).join('\n').trim()
+          // 只有去掉标题行后仍有实质内容，才提取标题；否则保留完整生成内容
+          const hasRealContent = contentWithoutTitle.replace(/^[#\s]*$/, '').length > 0
+          console.log('[chapter/final] newTitle:', newTitle, 'contentWithoutTitle:', JSON.stringify(contentWithoutTitle), 'hasRealContent:', hasRealContent)
+          if (newTitle && hasRealContent) {
             currentChapter.value.title = newTitle
             // 从内容中去掉标题行
-            const contentWithoutTitle = lines.slice(1).join('\n').trim()
             currentChapter.value.content = contentWithoutTitle
             chapterContentValue.value = contentWithoutTitle
           }
