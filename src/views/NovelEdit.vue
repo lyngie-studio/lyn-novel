@@ -62,14 +62,13 @@
             </div>
             <div class="settingSection" style="flex: 4;">
               <h3 class="settingSectionTitle">世界设定</h3>
-              <textarea
-                ref="settingsTextareaRef"
-                v-model="settingsValue"
-                class="settingTextarea"
-                placeholder="请输入世界设定..."
-                @input="onSettingsInput"
-                :disabled="isGenerating"
-              ></textarea>
+              <div
+                ref="settingsEditorRef"
+                class="settingTextarea settingEditor"
+                :contenteditable="!isGenerating"
+                @input="onSettingsEditorInput"
+                @click="onSettingsEditorClick"
+              ></div>
             </div>
           </div>
           <div v-if="activeTab === 'characters'" class="characterListContainer" ref="charactersContainerRef">
@@ -339,18 +338,6 @@
       </div>
     </div>
 
-    <div v-if="showSettingsContinueDialog" class="continueDialogOverlay" @click.self="cancelSettingsContinue">
-      <div class="continueDialog">
-        <div class="continueDialogHeader">
-          <h2 class="continueDialogTitle">AI 续写内容</h2>
-          <div class="continueDialogActions">
-            <button class="btn btnSecondary" @click="cancelSettingsContinue">取消</button>
-            <button class="btn btnPrimary" @click="confirmSettingsContinue" :disabled="isGenerating">采用</button>
-          </div>
-        </div>
-        <textarea ref="settingsContinueTextareaRef" v-model="aiThinking" class="continueDialogTextarea" readonly></textarea>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -380,8 +367,7 @@ const draftChapterTitle = ref('')
 const generatingChapterId = ref('')
 const generatingChapterContent = ref('')
 const editorRef = ref(null)
-const settingsTextareaRef = ref(null)
-const settingsContinueTextareaRef = ref(null)
+const settingsEditorRef = ref(null)
 const charactersContainerRef = ref(null)
 const plotsContainerRef = ref(null)
 const chaptersContainerRef = ref(null)
@@ -430,7 +416,7 @@ const aiThinking = ref('')
 const aiGeneratedSettings = ref(false)
 const userEditedSettings = ref(false)
 const abortController = ref(null)
-const showSettingsContinueDialog = ref(false)
+const showSettingsContinuePreview = ref(false)
 
 // 人物生成相关状态
 const characterData = ref({
@@ -487,21 +473,6 @@ const currentParagraphCount = computed(() => {
 
 const totalWordCount = computed(() => {
   return novelData.value.chapters.reduce((sum, ch) => sum + (ch.wordCount || 0), 0)
-})
-
-const settingsValue = computed({
-  get: () => {
-    // 续写模式下保持编辑框显示原始内容，弹窗中显示 AI 生成内容
-    if (isGenerating.value && activeTab.value === 'settings' && !showSettingsContinueDialog.value) {
-      return aiThinking.value
-    }
-    return novelData.value.settings
-  },
-  set: (value) => {
-    if (!isGenerating.value) {
-      novelData.value.settings = value
-    }
-  }
 })
 
 const chapterContentValue = computed({
@@ -709,17 +680,86 @@ function getAIButtonText() {
   return '✨ AI生成'
 }
 
-function onSettingsInput() {
-  if (activeTab.value === 'settings') {
-    if (aiGeneratedSettings.value) {
-      userEditedSettings.value = true
-    }
+function onSettingsEditorInput() {
+  const editor = settingsEditorRef.value
+  if (!editor) return
+  if (showSettingsContinuePreview.value) {
+    // 收集除续写预览区和按钮外的所有文本
+    let text = ''
+    editor.childNodes.forEach(node => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        text += node.textContent
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        if (!node.classList.contains('settingsContinueText') && !node.classList.contains('settingsContinueActions')) {
+          text += node.innerText
+        }
+      }
+    })
+    novelData.value.settings = text
+  } else {
+    novelData.value.settings = editor.innerText
+  }
+  if (aiGeneratedSettings.value) {
+    userEditedSettings.value = true
+  }
+}
+
+function onSettingsEditorClick(event) {
+  const action = event.target.dataset.action
+  if (action === 'cancel-continue') {
+    cancelSettingsContinue()
+  } else if (action === 'confirm-continue') {
+    confirmSettingsContinue()
+  }
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div')
+  div.textContent = text
+  return div.innerHTML
+}
+
+function renderSettingsEditor() {
+  const editor = settingsEditorRef.value
+  if (!editor) return
+  if (showSettingsContinuePreview.value) {
+    const originalHtml = escapeHtml(novelData.value.settings || '')
+    const generatedHtml = escapeHtml(aiThinking.value || '')
+    const actionsHtml = isGenerating.value
+      ? ''
+      : `<span class="settingsContinueActions" contenteditable="false"><button class="btn btnSecondary" data-action="cancel-continue">取消</button><button class="btn btnPrimary" data-action="confirm-continue">采用</button></span>`
+    editor.innerHTML = `<span class="settingsOriginalText">${originalHtml}</span><span class="settingsContinueText" contenteditable="false" style="color: #e6c35c;">${generatedHtml}</span>${actionsHtml}`
+  } else {
+    editor.innerText = novelData.value.settings || ''
   }
 }
 
 watch(() => activeTab.value, (newTab) => {
   if (newTab === 'settings') {
     userEditedSettings.value = false
+    nextTick(renderSettingsEditor)
+  }
+})
+
+watch(() => showSettingsContinuePreview.value, () => {
+  nextTick(renderSettingsEditor)
+})
+
+watch(() => aiThinking.value, () => {
+  if (showSettingsContinuePreview.value) {
+    nextTick(renderSettingsEditor)
+  }
+})
+
+watch(() => isGenerating.value, () => {
+  if (showSettingsContinuePreview.value) {
+    nextTick(renderSettingsEditor)
+  }
+})
+
+watch(() => novelData.value.settings, () => {
+  if (isGenerating.value && activeTab.value === 'settings' && !showSettingsContinuePreview.value) {
+    nextTick(renderSettingsEditor)
   }
 })
 
@@ -730,6 +770,7 @@ onMounted(async () => {
     if (res.ok) {
       const novel = await res.json()
       novelData.value = novel
+      nextTick(renderSettingsEditor)
       if (novelData.value.chapters.length > 0) {
         selectChapter(novelData.value.chapters[0].id)
       }
@@ -744,6 +785,7 @@ onMounted(async () => {
       return
     }
     novelData.value = JSON.parse(JSON.stringify(novel))
+    nextTick(renderSettingsEditor)
     if (novelData.value.chapters.length > 0) {
       selectChapter(novelData.value.chapters[0].id)
     }
@@ -1172,7 +1214,7 @@ async function generateWithAI() {
     if (activeTab.value === 'settings') {
       const hasSettings = novelData.value.settings && novelData.value.settings.trim().length > 0
       if (hasSettings) {
-        showSettingsContinueDialog.value = true
+        showSettingsContinuePreview.value = true
         const template = prompts.settingsContinue || fallbackPrompts.settingsContinue
         prompt = replaceVars(template, {
           novelName: novelData.value.name,
@@ -1386,7 +1428,7 @@ async function generateWithAI() {
         // 小说简介：直接流式输出文字
         aiThinking.value = text
         // 仅在非续写模式下直接更新到novelData.settings；续写模式下需用户确认后再写入
-        if (!showSettingsContinueDialog.value) {
+        if (!showSettingsContinuePreview.value) {
           novelData.value.settings = text
         }
       } else if (activeTab.value === 'characters') {
@@ -1587,10 +1629,8 @@ async function generateWithAI() {
 
       // 自动滚动到底部
       nextTick(() => {
-        if (activeTab.value === 'settings' && showSettingsContinueDialog.value && settingsContinueTextareaRef.value) {
-          settingsContinueTextareaRef.value.scrollTop = settingsContinueTextareaRef.value.scrollHeight
-        } else if (activeTab.value === 'settings' && settingsTextareaRef.value) {
-          settingsTextareaRef.value.scrollTop = settingsTextareaRef.value.scrollHeight
+        if (activeTab.value === 'settings' && settingsEditorRef.value) {
+          settingsEditorRef.value.scrollTop = settingsEditorRef.value.scrollHeight
         } else if (activeTab.value === 'characters' && charactersContainerRef.value) {
           // 直接滚动到人物列表容器底部
           charactersContainerRef.value.scrollTop = charactersContainerRef.value.scrollHeight
@@ -1604,7 +1644,7 @@ async function generateWithAI() {
     }
 
     if (activeTab.value === 'settings') {
-      if (showSettingsContinueDialog.value) {
+      if (showSettingsContinuePreview.value) {
         // 续写模式：保留弹窗内容，等待用户确认后再写入
       } else {
         novelData.value.settings = generatedText
@@ -1863,8 +1903,8 @@ async function generateWithAI() {
       console.error('========================================')
       showDialogMessage(`AI生成失败: ${err.message}`)
       // 设置续写失败时关闭弹窗，避免空白弹窗停留
-      if (activeTab.value === 'settings' && showSettingsContinueDialog.value) {
-        showSettingsContinueDialog.value = false
+      if (activeTab.value === 'settings' && showSettingsContinuePreview.value) {
+        showSettingsContinuePreview.value = false
         aiThinking.value = ''
       }
     }
@@ -1893,7 +1933,7 @@ function confirmSettingsContinue() {
     const separator = novelData.value.settings.endsWith('\n') ? '' : '\n'
     novelData.value.settings += separator + aiThinking.value
   }
-  showSettingsContinueDialog.value = false
+  showSettingsContinuePreview.value = false
   aiThinking.value = ''
   aiGeneratedSettings.value = true
   userEditedSettings.value = false
@@ -1903,7 +1943,7 @@ function cancelSettingsContinue() {
   if (isGenerating.value) {
     stopGenerating()
   }
-  showSettingsContinueDialog.value = false
+  showSettingsContinuePreview.value = false
   aiThinking.value = ''
 }
 
@@ -1914,8 +1954,8 @@ function switchTab(tab) {
     stopGenerating()
   }
   // 离开设置页时关闭续写弹窗并清空临时内容
-  if (activeTab.value === 'settings' && showSettingsContinueDialog.value) {
-    showSettingsContinueDialog.value = false
+  if (activeTab.value === 'settings' && showSettingsContinuePreview.value) {
+    showSettingsContinuePreview.value = false
     aiThinking.value = ''
   }
   activeTab.value = tab
@@ -2196,12 +2236,14 @@ function switchTab(tab) {
   height: 100%;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .settingSection {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .settingSectionTitle {
@@ -2213,21 +2255,51 @@ function switchTab(tab) {
   border-bottom: 1px solid #3e3e42;
 }
 
-.settingTextarea {
+.settingTextarea,
+.settingEditor {
   width: 100%;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   padding: 10px;
   background: #1e1e1e;
   border: 1px solid #3e3e42;
   color: #ffffff;
   font-size: 13px;
-  resize: none;
   outline: none;
   box-sizing: border-box;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 
-.settingTextarea:focus {
+.settingTextarea:focus,
+.settingEditor:focus {
   border-color: #0078d4;
+}
+
+.settingEditor:deep(.settingsOriginalText) {
+  color: #ffffff;
+}
+
+.settingEditor:deep(.settingsContinueText) {
+  color: #e6c35c;
+}
+
+.settingEditor:deep(.settingsContinueActions) {
+  display: inline-flex;
+  gap: 8px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.settingEditor:deep(.settingsContinueActions .btn) {
+  padding: 0 10px;
+}
+
+.settingEditor:empty::before {
+  content: '请输入世界设定...';
+  color: #666666;
+  pointer-events: none;
 }
 
 .settingInput {
@@ -2587,7 +2659,8 @@ function switchTab(tab) {
   margin-top: 25px;
 }
 
-.btn {
+.btn,
+:deep(.btn) {
   height: 36px;
   padding: 0 20px;
   border: none;
@@ -2596,22 +2669,36 @@ function switchTab(tab) {
   transition: background 0.2s;
 }
 
-.btnPrimary {
+.btnPrimary,
+:deep(.btnPrimary) {
   background: #0078d4;
   color: #ffffff;
 }
 
-.btnPrimary:hover {
+.btnPrimary:hover,
+:deep(.btnPrimary:hover) {
   background: #1a86d9;
 }
 
-.btnSecondary {
+.btnSecondary,
+:deep(.btnSecondary) {
   background: #3e3e42;
   color: #ffffff;
 }
 
-.btnSecondary:hover {
+.btnSecondary:hover,
+:deep(.btnSecondary:hover) {
   background: #4a4a4e;
+}
+
+.btn:disabled,
+.btnPrimary:disabled,
+.btnSecondary:disabled,
+:deep(.btn:disabled),
+:deep(.btnPrimary:disabled),
+:deep(.btnSecondary:disabled) {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .savingToast {
@@ -2647,66 +2734,4 @@ function switchTab(tab) {
   }
 }
 
-/* AI 续写弹窗（位于左侧世界设定编辑框区域） */
-.continueDialogOverlay {
-  position: absolute;
-  top: 60px;
-  left: 0;
-  width: 320px;
-  height: calc(720px - 60px);
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.continueDialog {
-  position: absolute;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 300px;
-  height: 400px;
-  background: #2d2d30;
-  border: 1px solid #3e3e42;
-  border-radius: 8px;
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-}
-
-.continueDialogHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.continueDialogTitle {
-  font-size: 16px;
-  font-weight: 500;
-  color: #ffffff;
-  margin: 0;
-}
-
-.continueDialogActions {
-  display: flex;
-  gap: 10px;
-  margin: 0;
-}
-
-.continueDialogTextarea {
-  flex: 1;
-  min-height: 120px;
-  padding: 10px;
-  background: #1e1e1e;
-  border: 1px solid #3e3e42;
-  color: #ffffff;
-  font-size: 14px;
-  line-height: 1.6;
-  resize: none;
-  outline: none;
-  overflow-y: auto;
-}
 </style>
