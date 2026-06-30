@@ -205,7 +205,7 @@
           <div class="settingsHint">例如：请用现代白话文写作、多使用对话描写等。会追加在所有功能的prompt之后。</div>
         </div>
         <div class="settingsItem">
-          <label class="settingsLabel">小说设定</label>
+          <label class="settingsLabel">小说设定（首次生成）</label>
           <textarea 
             v-model="prompts.settings" 
             class="settingsTextarea" 
@@ -213,6 +213,16 @@
             rows="3"
           ></textarea>
           <div class="settingsHint">可用变量：{novelName}、{style}</div>
+        </div>
+        <div class="settingsItem">
+          <label class="settingsLabel">小说设定（续写）</label>
+          <textarea 
+            v-model="prompts.settingsContinue" 
+            class="settingsTextarea" 
+            placeholder="小说设定续写 prompt 模板"
+            rows="3"
+          ></textarea>
+          <div class="settingsHint">可用变量：{novelName}、{style}、{settings}</div>
         </div>
         <div class="settingsItem">
           <label class="settingsLabel">人物生成</label>
@@ -358,6 +368,7 @@ const modelSettings = ref({
 
 const prompts = ref({
   settings: '',
+  settingsContinue: '',
   characters: '',
   plots: '',
   chapters: {
@@ -368,6 +379,7 @@ const prompts = ref({
 
 const DEFAULT_PROMPTS_FRONTEND = {
   settings: '基于以下信息，为小说《{novelName}》生成一段吸引人的故事背景和世界观设定。\n小说类型：{style}\n请用中文回答，200字以内。',
+  settingsContinue: '你是小说《{novelName}》的作者。\n小说类型：{style}\n\n当前已有世界设定：\n{settings}\n\n请根据以上已有内容继续续写世界观设定，保持风格一致、剧情连贯，不要重复已有内容。用中文回答，只回复续写内容，200字以内。',
   characters: '返回一个JSON对象，不要有多余文字和内容。为小说《{novelName}》（类型：{style}）生成一个新角色。\n\n已有角色：{charactersInfo}\n\n比如：\n{\n  "name":"艾瑟琳","description":"艾瑟琳是一个科学家，在国家研究所上班。她的口头禅是：我是一个伟大的女性。短头发，深棕色的眼睛，高挺的鼻梁。"\n}',
   plots: '为小说《{novelName}》（类型：{style}）设计一个新情节。\n\n已有情节：{plotsInfo}\n\n只返回以下格式的JSON，不要有任何其他内容：\n{\n  "title":"情节标题","content":"情节内容"\n}',
   chapters: {
@@ -383,6 +395,7 @@ async function loadPrompts() {
       const data = await response.json()
       prompts.value = {
         settings: data.settings || DEFAULT_PROMPTS_FRONTEND.settings,
+        settingsContinue: data.settingsContinue || DEFAULT_PROMPTS_FRONTEND.settingsContinue,
         characters: data.characters || DEFAULT_PROMPTS_FRONTEND.characters,
         plots: data.plots || DEFAULT_PROMPTS_FRONTEND.plots,
         chapters: {
@@ -400,6 +413,7 @@ function normalizePromptsForSave(raw) {
   const defaults = DEFAULT_PROMPTS_FRONTEND
   return {
     settings: raw.settings.trim() || defaults.settings,
+    settingsContinue: (raw.settingsContinue || '').trim() || defaults.settingsContinue,
     characters: raw.characters.trim() || defaults.characters,
     plots: raw.plots.trim() || defaults.plots,
     chapters: {

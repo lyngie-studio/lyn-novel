@@ -245,7 +245,16 @@
               type="text"
               @click.stop
             />
-            <span v-else>暂无章节</span>
+            <input
+              v-else
+              v-model="draftChapterTitle"
+              class="titleInput"
+              type="text"
+              placeholder="输入章节标题"
+              @click.stop
+              @blur="ensureDraftChapter"
+              @keyup.enter="ensureDraftChapter"
+            />
           </h2>
           <div class="editorStats">
             <span>章节字数: {{ currentChapter?.wordCount || 0 }}</span>
@@ -329,6 +338,19 @@
         </div>
       </div>
     </div>
+
+    <div v-if="showSettingsContinueDialog" class="continueDialogOverlay" @click.self="cancelSettingsContinue">
+      <div class="continueDialog">
+        <div class="continueDialogHeader">
+          <h2 class="continueDialogTitle">AI 续写内容</h2>
+          <div class="continueDialogActions">
+            <button class="btn btnSecondary" @click="cancelSettingsContinue">取消</button>
+            <button class="btn btnPrimary" @click="confirmSettingsContinue" :disabled="isGenerating">采用</button>
+          </div>
+        </div>
+        <textarea ref="settingsContinueTextareaRef" v-model="aiThinking" class="continueDialogTextarea" readonly></textarea>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -354,10 +376,12 @@ const novelData = ref({
 const activeTab = ref('settings')
 const currentChapterId = ref('')
 const currentChapterContent = ref('')
+const draftChapterTitle = ref('')
 const generatingChapterId = ref('')
 const generatingChapterContent = ref('')
 const editorRef = ref(null)
 const settingsTextareaRef = ref(null)
+const settingsContinueTextareaRef = ref(null)
 const charactersContainerRef = ref(null)
 const plotsContainerRef = ref(null)
 const chaptersContainerRef = ref(null)
@@ -406,6 +430,7 @@ const aiThinking = ref('')
 const aiGeneratedSettings = ref(false)
 const userEditedSettings = ref(false)
 const abortController = ref(null)
+const showSettingsContinueDialog = ref(false)
 
 // 人物生成相关状态
 const characterData = ref({
@@ -466,7 +491,11 @@ const totalWordCount = computed(() => {
 
 const settingsValue = computed({
   get: () => {
-    return isGenerating.value && activeTab.value === 'settings' ? aiThinking.value : novelData.value.settings
+    // 续写模式下保持编辑框显示原始内容，弹窗中显示 AI 生成内容
+    if (isGenerating.value && activeTab.value === 'settings' && !showSettingsContinueDialog.value) {
+      return aiThinking.value
+    }
+    return novelData.value.settings
   },
   set: (value) => {
     if (!isGenerating.value) {
@@ -488,6 +517,7 @@ const chapterContentValue = computed({
   set: (value) => {
     if (!isGenerating.value) {
       currentChapterContent.value = value
+      ensureDraftChapter()
     }
   }
 })
@@ -503,11 +533,29 @@ function openSettings() {
 }
 
 function saveNovelData() {
+  ensureDraftChapter()
   if (currentChapter.value) {
     currentChapter.value.content = currentChapterContent.value
     currentChapter.value.wordCount = countWords(currentChapterContent.value)
   }
   saveNovel(novelData.value)
+}
+
+function ensureDraftChapter() {
+  if (currentChapter.value) return currentChapter.value
+  const title = draftChapterTitle.value.trim()
+  if (!title && !currentChapterContent.value.trim()) return null
+  const newId = Date.now().toString()
+  const chapter = {
+    id: newId,
+    title: title || `第${novelData.value.chapters.length + 1}章`,
+    content: currentChapterContent.value,
+    wordCount: countWords(currentChapterContent.value)
+  }
+  novelData.value.chapters.push(chapter)
+  currentChapterId.value = newId
+  draftChapterTitle.value = ''
+  return chapter
 }
 
 function countWords(text) {
@@ -516,6 +564,7 @@ function countWords(text) {
 }
 
 function updateWordCount() {
+  ensureDraftChapter()
   if (currentChapter.value) {
     currentChapter.value.wordCount = countWords(currentChapterContent.value)
   }
@@ -649,10 +698,7 @@ function getAIButtonText() {
     if (!novelData.value.settings || novelData.value.settings.trim() === '') {
       return '✨ AI生成'
     }
-    if (aiGeneratedSettings.value && !userEditedSettings.value) {
-      return '✨ 重新生成'
-    }
-    return '✨ AI优化'
+    return '✨ AI续写'
   }
   if (activeTab.value === 'chapters') {
     const currentContent = currentChapterContent.value || ''
@@ -1114,6 +1160,7 @@ async function generateWithAI() {
 
     const fallbackPrompts = {
       settings: '基于以下信息，为小说《{novelName}》生成一段吸引人的故事背景和世界观设定。\n小说类型：{style}\n请用中文回答，200字以内。',
+      settingsContinue: '你是小说《{novelName}》的作者。\n小说类型：{style}\n\n当前已有世界设定：\n{settings}\n\n请根据以上已有内容继续续写世界观设定，保持风格一致、剧情连贯，不要重复已有内容。用中文回答，只回复续写内容，200字以内。',
       characters: '返回一个JSON对象，不要有多余文字和内容。为小说《{novelName}》（类型：{style}）生成一个新角色。\n\n已有角色：{charactersInfo}\n\n比如：\n{\n  "name":"艾瑟琳","description":"艾瑟琳是一个科学家，在国家研究所上班。她的口头禅是：我是一个伟大的女性。短头发，深棕色的眼睛，高挺的鼻梁。"\n}',
       plots: '为小说《{novelName}》（类型：{style}）设计一个新情节。\n\n已有情节：{plotsInfo}\n\n只返回以下格式的JSON，不要有任何其他内容：\n{\n  "title":"情节标题","content":"情节内容"\n}',
       chapters: {
@@ -1123,11 +1170,22 @@ async function generateWithAI() {
     }
 
     if (activeTab.value === 'settings') {
-      const template = prompts.settings || fallbackPrompts.settings
-      prompt = replaceVars(template, {
-        novelName: novelData.value.name,
-        style: novelData.value.style
-      })
+      const hasSettings = novelData.value.settings && novelData.value.settings.trim().length > 0
+      if (hasSettings) {
+        showSettingsContinueDialog.value = true
+        const template = prompts.settingsContinue || fallbackPrompts.settingsContinue
+        prompt = replaceVars(template, {
+          novelName: novelData.value.name,
+          style: novelData.value.style,
+          settings: novelData.value.settings
+        })
+      } else {
+        const template = prompts.settings || fallbackPrompts.settings
+        prompt = replaceVars(template, {
+          novelName: novelData.value.name,
+          style: novelData.value.style
+        })
+      }
     } else if (activeTab.value === 'characters') {
       const charactersInfo = novelData.value.characters.map(c => `人物：${c.name}，描述：${c.description}`).join('\n')
       const template = prompts.characters || fallbackPrompts.characters
@@ -1327,8 +1385,10 @@ async function generateWithAI() {
       if (activeTab.value === 'settings') {
         // 小说简介：直接流式输出文字
         aiThinking.value = text
-        // 同时更新到novelData.settings中，确保内容不会丢失
-        novelData.value.settings = text
+        // 仅在非续写模式下直接更新到novelData.settings；续写模式下需用户确认后再写入
+        if (!showSettingsContinueDialog.value) {
+          novelData.value.settings = text
+        }
       } else if (activeTab.value === 'characters') {
         // 人物生成：先解析出人物姓名，再流式输出人物简介
         try {
@@ -1527,7 +1587,9 @@ async function generateWithAI() {
 
       // 自动滚动到底部
       nextTick(() => {
-        if (activeTab.value === 'settings' && settingsTextareaRef.value) {
+        if (activeTab.value === 'settings' && showSettingsContinueDialog.value && settingsContinueTextareaRef.value) {
+          settingsContinueTextareaRef.value.scrollTop = settingsContinueTextareaRef.value.scrollHeight
+        } else if (activeTab.value === 'settings' && settingsTextareaRef.value) {
           settingsTextareaRef.value.scrollTop = settingsTextareaRef.value.scrollHeight
         } else if (activeTab.value === 'characters' && charactersContainerRef.value) {
           // 直接滚动到人物列表容器底部
@@ -1542,9 +1604,13 @@ async function generateWithAI() {
     }
 
     if (activeTab.value === 'settings') {
-      novelData.value.settings = generatedText
-      aiGeneratedSettings.value = true
-      userEditedSettings.value = false
+      if (showSettingsContinueDialog.value) {
+        // 续写模式：保留弹窗内容，等待用户确认后再写入
+      } else {
+        novelData.value.settings = generatedText
+        aiGeneratedSettings.value = true
+        userEditedSettings.value = false
+      }
     } else if (activeTab.value === 'characters') {
       try {
         let cleanText = generatedText.replace(/[\x00-\x1F\x7F]/g, '')
@@ -1796,6 +1862,11 @@ async function generateWithAI() {
       console.error('错误堆栈:', err.stack)
       console.error('========================================')
       showDialogMessage(`AI生成失败: ${err.message}`)
+      // 设置续写失败时关闭弹窗，避免空白弹窗停留
+      if (activeTab.value === 'settings' && showSettingsContinueDialog.value) {
+        showSettingsContinueDialog.value = false
+        aiThinking.value = ''
+      }
     }
   } finally {
     isGenerating.value = false
@@ -1816,11 +1887,36 @@ function stopGenerating() {
   // 不要清空aiThinking，保留已生成的内容
 }
 
+// 设置续写弹窗确认与取消
+function confirmSettingsContinue() {
+  if (aiThinking.value) {
+    const separator = novelData.value.settings.endsWith('\n') ? '' : '\n'
+    novelData.value.settings += separator + aiThinking.value
+  }
+  showSettingsContinueDialog.value = false
+  aiThinking.value = ''
+  aiGeneratedSettings.value = true
+  userEditedSettings.value = false
+}
+
+function cancelSettingsContinue() {
+  if (isGenerating.value) {
+    stopGenerating()
+  }
+  showSettingsContinueDialog.value = false
+  aiThinking.value = ''
+}
+
 // 切换标签函数
 function switchTab(tab) {
   // 如果AI正在生成，自动停止
   if (isGenerating.value) {
     stopGenerating()
+  }
+  // 离开设置页时关闭续写弹窗并清空临时内容
+  if (activeTab.value === 'settings' && showSettingsContinueDialog.value) {
+    showSettingsContinueDialog.value = false
+    aiThinking.value = ''
   }
   activeTab.value = tab
 }
@@ -1830,6 +1926,7 @@ function switchTab(tab) {
 
 <style scoped>
 .editContainer {
+  position: relative;
   width: 1280px;
   height: 720px;
   display: flex;
@@ -2548,5 +2645,68 @@ function switchTab(tab) {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* AI 续写弹窗（位于左侧世界设定编辑框区域） */
+.continueDialogOverlay {
+  position: absolute;
+  top: 60px;
+  left: 0;
+  width: 320px;
+  height: calc(720px - 60px);
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.continueDialog {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 300px;
+  height: 400px;
+  background: #2d2d30;
+  border: 1px solid #3e3e42;
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+}
+
+.continueDialogHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.continueDialogTitle {
+  font-size: 16px;
+  font-weight: 500;
+  color: #ffffff;
+  margin: 0;
+}
+
+.continueDialogActions {
+  display: flex;
+  gap: 10px;
+  margin: 0;
+}
+
+.continueDialogTextarea {
+  flex: 1;
+  min-height: 120px;
+  padding: 10px;
+  background: #1e1e1e;
+  border: 1px solid #3e3e42;
+  color: #ffffff;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: none;
+  outline: none;
+  overflow-y: auto;
 }
 </style>

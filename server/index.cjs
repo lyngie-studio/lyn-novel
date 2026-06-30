@@ -75,6 +75,7 @@ function saveConfig(config) {
 
 const DEFAULT_PROMPTS = {
   settings: '基于以下信息，为小说《{novelName}》生成一段吸引人的故事背景和世界观设定。\n小说类型：{style}\n请用中文回答，200字以内。',
+  settingsContinue: '你是小说《{novelName}》的作者。\n小说类型：{style}\n\n当前已有世界设定：\n{settings}\n\n请根据以上已有内容继续续写世界观设定，保持风格一致、剧情连贯，不要重复已有内容。用中文回答，只回复续写内容，200字以内。',
   characters: '返回一个JSON对象，不要有多余文字和内容。为小说《{novelName}》（类型：{style}）生成一个新角色。\n\n已有角色：{charactersInfo}\n\n比如：\n{\n  "name":"艾瑟琳","description":"艾瑟琳是一个科学家，在国家研究所上班。她的口头禅是：我是一个伟大的女性。短头发，深棕色的眼睛，高挺的鼻梁。"\n}',
   plots: '为小说《{novelName}》（类型：{style}）设计一个新情节。\n\n已有情节：{plotsInfo}\n\n只返回以下格式的JSON，不要有任何其他内容：\n{\n  "title":"情节标题","content":"情节内容"\n}',
   chapters: {
@@ -479,7 +480,7 @@ app.get('/api/prompts', (req, res) => {
 function sanitizePrompts(incoming) {
   const defaults = JSON.parse(JSON.stringify(DEFAULT_PROMPTS))
   const result = {}
-  for (const key of ['settings', 'characters', 'plots']) {
+  for (const key of ['settings', 'settingsContinue', 'characters', 'plots']) {
     const val = incoming[key]
     result[key] = (typeof val === 'string' && val.trim()) ? val.trim() : defaults[key]
   }
